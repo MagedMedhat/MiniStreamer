@@ -1,7 +1,70 @@
 <!doctype html>
-<html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiniStreamer</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      li {
+        margin: 0.5rem 0;
+      }
+    </style>
+  </head>
   <body>
     <h1>MiniStreamer</h1>
-    <video src="/video" controls width="720"></video>
+
+    <h2>Upload</h2>
+    <form id="upload-form">
+      <input name="title" placeholder="Title" />
+      <input name="video" type="file" accept="video/*" required />
+      <button>Upload</button>
+      <span id="msg"></span>
+    </form>
+
+    <h2>Videos</h2>
+    <ul id="list"></ul>
+
+    <script>
+      const list = document.getElementById("list");
+      const msg = document.getElementById("msg");
+
+      async function loadVideos() {
+        const res = await fetch("/api/videos");
+        const videos = await res.json();
+        list.innerHTML = "";
+        for (const v of videos) {
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.href = `/watch.html?id=${v._id}`;
+          a.textContent = v.title;
+          li.append(a, ` (${v.status}, ${(v.size / 1048576).toFixed(1)} MB)`);
+          list.append(li);
+        }
+      }
+
+      document
+        .getElementById("upload-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          msg.textContent = "Uploading...";
+          const res = await fetch("/api/videos", {
+            method: "POST",
+            body: new FormData(e.target),
+          });
+          const data = await res.json();
+          msg.textContent = res.ok ? "Uploaded!" : data.error;
+          if (res.ok) {
+            e.target.reset();
+            loadVideos();
+          }
+        });
+
+      loadVideos();
+    </script>
   </body>
 </html>
