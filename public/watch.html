@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>Watch</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.10/dist/hls.min.js"></script>
   </head>
   <body
     style="
@@ -13,19 +14,68 @@
   >
     <a href="/">← Back</a>
     <h1 id="title"></h1>
+    <p id="notice"></p>
     <video id="player" controls width="720"></video>
+    <p>
+      Quality:
+      <select id="quality">
+        <option value="-1">Auto</option>
+      </select>
+      <span id="current"></span>
+    </p>
 
     <script>
       const id = new URLSearchParams(location.search).get("id");
+      const player = document.getElementById("player");
+      const quality = document.getElementById("quality");
+      const current = document.getElementById("current");
+      const title = document.getElementById("title");
+      const notice = document.getElementById("notice");
+
       (async () => {
         const res = await fetch(`/api/videos/${id}`);
         if (!res.ok) {
-          document.getElementById("title").textContent = "Video not found";
+          title.textContent = "Video not found";
           return;
         }
         const v = await res.json();
-        document.getElementById("title").textContent = v.title;
-        document.getElementById("player").src = `/api/videos/${id}/stream`;
+        title.textContent = v.title;
+
+        if (v.status !== "ready") {
+          notice.textContent = `This video is ${v.status}. Try again in a moment.`;
+          player.hidden = true;
+          return;
+        }
+
+        const src = `/hls/${id}/master.m3u8`;
+
+        if (window.Hls && Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(src);
+          hls.attachMedia(player);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            hls.levels.forEach((level, index) => {
+              const opt = document.createElement("option");
+              opt.value = index;
+              opt.textContent = `${level.height}p`;
+              quality.append(opt);
+            });
+          });
+
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+            current.textContent = `Playing: ${hls.levels[data.level].height}p`;
+          });
+
+          quality.addEventListener("change", () => {
+            hls.currentLevel = Number(quality.value); // -1 = Auto
+          });
+        } else if (player.canPlayType("application/vnd.apple.mpegurl")) {
+          player.src = src; // Safari / iOS play HLS natively
+          quality.disabled = true;
+        } else {
+          notice.textContent = "This browser can't play HLS.";
+        }
       })();
     </script>
   </body>
