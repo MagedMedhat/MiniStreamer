@@ -4,7 +4,8 @@ const mongoose = require("mongoose");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-
+const Video = require("./src/models/Video");
+const { enqueue } = require("./src/services/queue");
 const { PORT, MONGO_URI, STORAGE_ROOT } = require("./src/config");
 const videoRoutes = require("./src/routes/videos");
 
@@ -13,6 +14,7 @@ fs.mkdirSync(path.join(STORAGE_ROOT, "originals"), { recursive: true });
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/hls", express.static(path.join(STORAGE_ROOT, "hls")));
 app.use("/api/videos", videoRoutes);
 
 app.use((err, req, res, next) => {
@@ -30,8 +32,13 @@ app.use((err, req, res, next) => {
 
 mongoose
   .connect(MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log("MongoDB connected");
+    // Pick up anything that didn't finished in case of server crash or restart
+    const pending = await Video.find({
+      status: { $in: ["uploaded", "processing"] },
+    }).select("_id");
+    await pending.forEach((v) => enqueue(v._id));
     app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
   })
   .catch((err) => {

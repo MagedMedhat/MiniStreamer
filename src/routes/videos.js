@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
+const { enqueue } = require("../services/queue");
 
 const Video = require("../models/Video");
 const uploadVideo = require("../middleware/upload");
@@ -30,7 +31,7 @@ router.post("/", uploadVideo, async (req, res, next) => {
       size: req.file.size,
       mimeType: req.file.mimetype,
     });
-
+    enqueue(video._id);
     res.status(201).json(video);
   } catch (err) {
     if (req.file) fs.unlink(req.file.path, () => {}); // don't leave orphan files
@@ -50,7 +51,6 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-// Load the video for any route with :id
 router.param("id", async (req, res, next, id) => {
   try {
     if (!mongoose.isValidObjectId(id)) {
