@@ -2,91 +2,296 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Watch</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Watch - MiniStreamer</title>
+    <link rel="stylesheet" href="/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.10/dist/hls.min.js"></script>
   </head>
-  <body
-    style="
-      font-family: system-ui, sans-serif;
-      max-width: 800px;
-      margin: 2rem auto;
-    "
-  >
-    <a href="/">← Back</a>
-    <h1 id="title"></h1>
-    <p id="notice"></p>
-    <video id="player" controls width="720"></video>
-    <p>
-      Quality:
-      <select id="quality">
-        <option value="-1">Auto</option>
-      </select>
-      <span id="current"></span>
-    </p>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="logo" href="/">MiniStreamer</a
+        ><a class="back" href="/">Back to library</a>
+      </header>
+
+      <div id="player" class="player paused" tabindex="0">
+        <video id="v" playsinline></video>
+        <button id="big" class="big" aria-label="Play">Play</button>
+        <div class="ctl">
+          <div id="seek" class="seek" aria-label="Seek">
+            <div class="track">
+              <i id="buf"></i><i id="played"></i><b id="knob"></b>
+            </div>
+            <div id="pv" class="pv">
+              <div id="pvi"></div>
+              <span id="pvt">0:00</span>
+            </div>
+          </div>
+          <div class="bar">
+            <button id="pp">Play</button>
+            <span id="time" class="time">0:00 / 0:00</span>
+            <span class="sp"></span>
+            <input
+              id="vol"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value="1"
+              aria-label="Volume"
+            />
+            <button id="mute">Mute</button>
+            <div class="qwrap">
+              <button id="q">Auto</button>
+              <div id="menu" class="menu" hidden></div>
+            </div>
+            <button id="fs">Fullscreen</button>
+          </div>
+        </div>
+      </div>
+
+      <h1 id="title"></h1>
+      <p id="meta" class="meta"></p>
+      <p id="notice"></p>
+    </div>
 
     <script>
+      const $ = (s) => document.querySelector(s);
       const id = new URLSearchParams(location.search).get("id");
-      const player = document.getElementById("player");
-      const quality = document.getElementById("quality");
-      const current = document.getElementById("current");
-      const title = document.getElementById("title");
-      const notice = document.getElementById("notice");
+      const v = $("#v"),
+        box = $("#player"),
+        seek = $("#seek"),
+        pv = $("#pv"),
+        pvi = $("#pvi"),
+        pvt = $("#pvt");
+      const menu = $("#menu"),
+        qb = $("#q");
+      const cues = [];
+      let hls,
+        meta,
+        sel = -1,
+        idleT;
 
-      (async () => {
-        const res = await fetch(`/api/videos/${id}`);
-        if (!res.ok) {
-          title.textContent = "Video not found";
+      const fmt = (s) => {
+        s = Math.max(0, Math.floor(s || 0));
+        const h = Math.floor(s / 3600),
+          m = Math.floor((s % 3600) / 60),
+          x = String(s % 60).padStart(2, "0");
+        return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+      };
+      const dur = () => v.duration || (meta && meta.duration) || 0;
+
+      async function load() {
+        const r = await fetch(`/api/videos/${id}`);
+        if (!r.ok) {
+          $("#title").textContent = "Video not found";
+          box.hidden = true;
           return;
         }
-        const v = await res.json();
-        title.textContent = v.title;
-
-        if (v.status !== "ready") {
-          notice.textContent = `This video is ${v.status}. Try again in a moment.`;
-          player.hidden = true;
-          return;
+        meta = await r.json();
+        $("#title").textContent = meta.title;
+        $("#meta").textContent =
+          `${(meta.size / 1048576).toFixed(1)} MB, ${meta.status}`;
+        if (meta.status !== "ready") {
+          box.hidden = true;
+          $("#notice").textContent =
+            `This video is ${meta.status}. This page checks again every few seconds.`;
+          return setTimeout(load, 3000);
         }
+        box.hidden = false;
+        $("#notice").textContent = "";
+        start();
+      }
 
+      function buildMenu() {
+        menu.innerHTML = "";
+        const add = (label, lvl) => {
+          const b = document.createElement("button");
+          b.textContent = label;
+          if (lvl === sel) b.className = "on";
+          b.onclick = () => {
+            sel = lvl;
+            hls.nextLevel = lvl;
+            qb.textContent = label;
+            menu.hidden = true;
+            buildMenu();
+          };
+          menu.append(b);
+        };
+        add("Auto", -1);
+        hls.levels
+          .map((l, i) => [l.height + "p", i])
+          .reverse()
+          .forEach(([t, i]) => add(t, i));
+      }
+
+      function start() {
         const src = `/hls/${id}/master.m3u8`;
-
         if (window.Hls && Hls.isSupported()) {
-          const hls = new Hls();
+          hls = new Hls();
           hls.loadSource(src);
-          hls.attachMedia(player);
-          hls.on(Hls.Events.BUFFER_FLUSHING, (_, data) => {
+          hls.attachMedia(v);
+          hls.on(Hls.Events.MANIFEST_PARSED, buildMenu);
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_, d) => {
+            if (sel === -1)
+              qb.textContent = `Auto ${hls.levels[d.level].height}p`;
+          });
+          hls.on(Hls.Events.BUFFER_FLUSHING, (_, d) =>
             console.log(
-              "flush",
-              data.type,
-              data.startOffset,
+              "console flush",
+              d.startOffset,
               "→",
-              data.endOffset,
+              d.endOffset,
               "| playhead:",
-              player.currentTime.toFixed(2),
-            );
-          });
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            hls.levels.forEach((level, index) => {
-              const opt = document.createElement("option");
-              opt.value = index;
-              opt.textContent = `${level.height}p`;
-              quality.append(opt);
-            });
-          });
-
-          hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
-            current.textContent = `Playing: ${hls.levels[data.level].height}p`;
-          });
-
-          quality.addEventListener("change", () => {
-            hls.nextLevel = Number(quality.value); // -1 = Auto
-          });
-        } else if (player.canPlayType("application/vnd.apple.mpegurl")) {
-          player.src = src; // Safari / iOS play HLS natively
-          quality.disabled = true;
+              v.currentTime.toFixed(2),
+            ),
+          );
+        } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
+          v.src = src;
+          qb.hidden = true;
         } else {
-          notice.textContent = "This browser can't play HLS.";
+          $("#notice").textContent = "This browser can't play HLS.";
         }
-      })();
+        loadCues();
+      }
+
+      async function loadCues() {
+        try {
+          const base = `/hls/${id}/thumbs/`;
+          const res = await fetch(base + "thumbs.vtt");
+          if (!res.ok) return;
+
+          const ts = (s) => {
+            const p = s.split(":").map(parseFloat);
+            return p[0] * 3600 + p[1] * 60 + p[2];
+          };
+
+          const lines = (await res.text()).split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(/^(\S+) --> (\S+)/);
+            const q =
+              m &&
+              (lines[i + 1] || "").match(/^(.+)#xywh=(\d+),(\d+),(\d+),(\d+)/);
+
+            if (q) {
+              cues.push({
+                s: ts(m[1]),
+                e: ts(m[2]),
+                url: base + q[1],
+                x: +q[2],
+                y: +q[3],
+                w: +q[4],
+                h: +q[5],
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load cues", err);
+        }
+      }
+      /* playback state */
+      const toggle = () => (v.paused ? v.play() : v.pause());
+      $("#pp").onclick = $("#big").onclick = v.onclick = toggle;
+      v.onplay = v.onpause = () => {
+        box.classList.toggle("paused", v.paused);
+        $("#pp").textContent = v.paused ? "Play" : "Pause";
+      };
+      $("#vol").oninput = (e) => {
+        v.volume = e.target.value;
+        v.muted = false;
+      };
+      $("#mute").onclick = () => {
+        v.muted = !v.muted;
+      };
+      v.onvolumechange = () => {
+        $("#mute").textContent = v.muted || v.volume === 0 ? "Unmute" : "Mute";
+      };
+      $("#fs").onclick = () =>
+        document.fullscreenElement
+          ? document.exitFullscreen()
+          : box.requestFullscreen();
+      qb.onclick = () => {
+        menu.hidden = !menu.hidden;
+      };
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".qwrap")) menu.hidden = true;
+      });
+
+      function tick() {
+        const d = dur() || 1,
+          t = v.currentTime;
+        $("#played").style.width = (t / d) * 100 + "%";
+        $("#knob").style.left = (t / d) * 100 + "%";
+        $("#time").textContent = `${fmt(t)} / ${fmt(dur())}`;
+        let end = 0;
+        for (let i = 0; i < v.buffered.length; i++)
+          if (v.buffered.start(i) <= t + 0.5 && v.buffered.end(i) >= t)
+            end = v.buffered.end(i);
+        $("#buf").style.width = (end / d) * 100 + "%";
+      }
+      ["timeupdate", "progress", "durationchange", "seeked"].forEach((e) =>
+        v.addEventListener(e, tick),
+      );
+
+      /* seek bar: click, drag, hover preview */
+      const ratio = (e) => {
+        const r = seek.getBoundingClientRect();
+        return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      };
+
+      function preview(r) {
+        const t = r * dur();
+        pvt.textContent = fmt(t);
+        const c =
+          cues.find((c) => t >= c.s && t < c.e) || cues[cues.length - 1];
+        pvi.hidden = !c;
+        if (c)
+          pvi.style.cssText = `width:${c.w}px;height:${c.h}px;background:url(${c.url}) -${c.x}px -${c.y}px no-repeat`;
+        pv.style.display = "flex";
+        const w = pv.offsetWidth,
+          W = seek.clientWidth;
+        pv.style.left = Math.min(W - w / 2, Math.max(w / 2, r * W)) + "px";
+      }
+
+      let drag = false;
+      seek.addEventListener("pointerdown", (e) => {
+        drag = true;
+        seek.setPointerCapture(e.pointerId);
+        v.currentTime = ratio(e) * dur();
+      });
+      seek.addEventListener("pointermove", (e) => {
+        const r = ratio(e);
+        preview(r);
+        if (drag) v.currentTime = r * dur();
+      });
+      seek.addEventListener("pointerup", () => {
+        drag = false;
+      });
+      seek.addEventListener("pointerleave", () => {
+        if (!drag) pv.style.display = "none";
+      });
+
+      /* idle hiding and keyboard */
+      box.onpointermove = () => {
+        box.classList.remove("idle");
+        clearTimeout(idleT);
+        idleT = setTimeout(() => {
+          if (!v.paused) box.classList.add("idle");
+        }, 2500);
+      };
+      document.addEventListener("keydown", (e) => {
+        if (e.target.matches("input,textarea")) return;
+        const k = e.key.toLowerCase();
+        if (k === " " || k === "k") {
+          e.preventDefault();
+          toggle();
+        } else if (k === "arrowleft") v.currentTime -= 5;
+        else if (k === "arrowright") v.currentTime += 5;
+        else if (k === "f") $("#fs").click();
+        else if (k === "m") $("#mute").click();
+      });
+
+      load();
     </script>
   </body>
 </html>
