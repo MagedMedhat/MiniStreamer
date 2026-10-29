@@ -53,7 +53,17 @@
           const hls = new Hls();
           hls.loadSource(src);
           hls.attachMedia(player);
-
+          hls.on(Hls.Events.BUFFER_FLUSHING, (_, data) => {
+            console.log(
+              "flush",
+              data.type,
+              data.startOffset,
+              "→",
+              data.endOffset,
+              "| playhead:",
+              player.currentTime.toFixed(2),
+            );
+          });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             hls.levels.forEach((level, index) => {
               const opt = document.createElement("option");
@@ -68,7 +78,7 @@
           });
 
           quality.addEventListener("change", () => {
-            hls.currentLevel = Number(quality.value); // -1 = Auto
+            hls.nextLevel = Number(quality.value); // -1 = Auto
           });
         } else if (player.canPlayType("application/vnd.apple.mpegurl")) {
           player.src = src; // Safari / iOS play HLS natively

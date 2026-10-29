@@ -1,16 +1,16 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
-
 import Video from "../../models/video.model.js";
 import { probe } from "../../utils/ffprobe.js";
 import { STORAGE_ROOT } from "../../config/env.js";
 import { LADDER } from "./transcoding.constants.js";
+import { runFfmpeg } from "../../utils/ffmpeg.js";
+import { generateThumbnails } from "./thumbnails.service.js";
 
 function pickLadder(sourceHeight) {
   const fitting = LADDER.filter((r) => r.height <= sourceHeight);
   if (fitting.length > 0) return fitting;
-  // Source is smaller than our lowest rung
+  // Source is smaller than our lowest encoding quality
   const height = sourceHeight - (sourceHeight % 2);
   return [{ name: `${height}p`, height, videoBitrate: 400, audioBitrate: 64 }];
 }
@@ -58,23 +58,6 @@ function buildArgs(inputPath, r) {
     "seg%03d.ts",
     "playlist.m3u8",
   ];
-}
-
-function runFfmpeg(args, cwd) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("ffmpeg", args, { cwd });
-
-    let stderr = "";
-    proc.stderr.on("data", (chunk) => {
-      stderr = (stderr + chunk).slice(-4000);
-    });
-
-    proc.on("error", reject);
-    proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
-    });
-  });
 }
 
 function buildMaster(renditions) {
@@ -128,6 +111,12 @@ export async function transcode(videoId) {
       path.join(outRoot, "master.m3u8"),
       buildMaster(renditions),
     );
+
+    try {
+      await generateThumbnails({ input, outRoot, info });
+    } catch (err) {
+      console.error(`Thumbnails failed for ${video._id}:`, err.message);
+    }
 
     video.duration = info.duration;
     video.renditions = renditions;

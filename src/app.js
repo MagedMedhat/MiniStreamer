@@ -8,7 +8,21 @@ const app = express();
 
 app.use(express.json());
 app.use(express.static(path.join(import.meta.dirname, "..", "public")));
-app.use("/hls", express.static(path.join(STORAGE_ROOT, "hls")));
+
+const HLS_ROOT = path.join(STORAGE_ROOT, "hls");
+app.use(
+  "/hls",
+  express.static(HLS_ROOT, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".ts")) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else if (filePath.endsWith(".m3u8")) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
+  }),
+);
+
 app.use("/api/videos", videoRoutes);
 
 app.use(errorHandler);
