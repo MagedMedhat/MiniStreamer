@@ -2,69 +2,147 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MiniStreamer</title>
-    <style>
-      body {
-        font-family: system-ui, sans-serif;
-        max-width: 720px;
-        margin: 2rem auto;
-        padding: 0 1rem;
-      }
-      li {
-        margin: 0.5rem 0;
-      }
-    </style>
+    <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <h1>MiniStreamer</h1>
+    <div class="wrap">
+      <header><a class="logo" href="/">MiniStreamer</a></header>
 
-    <h2>Upload</h2>
-    <form id="upload-form">
-      <input name="title" placeholder="Title" />
-      <input name="video" type="file" accept="video/*" required />
-      <button>Upload</button>
-      <span id="msg"></span>
-    </form>
+      <section class="up">
+        <label id="drop" class="drop">
+          <input id="file" type="file" accept="video/*" hidden />
+          <strong>Drop a video here</strong>
+          <span id="fname"
+            >or click to choose a file (MP4, MOV, WebM or MKV, up to 500
+            MB)</span
+          >
+        </label>
+        <div class="uprow">
+          <input id="title" placeholder="Title (optional)" maxlength="120" />
+          <button id="go" disabled>Upload</button>
+        </div>
+        <div class="progress"><i id="bar"></i></div>
+        <p id="msg" role="status"></p>
+      </section>
 
-    <h2>Videos</h2>
-    <ul id="list"></ul>
+      <h2>Library</h2>
+      <div id="list" class="grid"></div>
+    </div>
 
     <script>
-      const list = document.getElementById("list");
-      const msg = document.getElementById("msg");
+      const $ = (s) => document.querySelector(s);
+      const list = $("#list"),
+        file = $("#file"),
+        go = $("#go"),
+        drop = $("#drop");
+      const LABEL = {
+        uploaded: "Queued",
+        processing: "Processing",
+        ready: "Ready",
+        failed: "Failed",
+      };
+      let timer;
 
-      async function loadVideos() {
-        const res = await fetch("/api/videos");
-        const videos = await res.json();
-        list.innerHTML = "";
-        for (const v of videos) {
-          const li = document.createElement("li");
-          const a = document.createElement("a");
-          a.href = `/watch.html?id=${v._id}`;
-          a.textContent = v.title;
-          li.append(a, ` (${v.status}, ${(v.size / 1048576).toFixed(1)} MB)`);
-          list.append(li);
-        }
+      const fmt = (s) => {
+        s = Math.floor(s || 0);
+        const h = Math.floor(s / 3600),
+          m = Math.floor((s % 3600) / 60),
+          x = String(s % 60).padStart(2, "0");
+        return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+      };
+      const size = (b) =>
+        b >= 1073741824
+          ? (b / 1073741824).toFixed(1) + " GB"
+          : (b / 1048576).toFixed(1) + " MB";
+
+      function card(v) {
+        const a = document.createElement("a");
+        a.className = "card";
+        a.href = `/watch.html?id=${v._id}`;
+        a.innerHTML = `<div class="thumb">${v.status === "ready" ? `<img src="/hls/${v._id}/thumbs/sprite.jpg" alt="" onerror="this.remove()">` : ""}</div>
+    <div class="info"><h3></h3><div class="row"><span class="chip ${v.status}">${LABEL[v.status] || v.status}</span><span>${size(v.size)}</span>${v.duration ? `<span>${fmt(v.duration)}</span>` : ""}</div></div>`;
+        a.querySelector("h3").textContent = v.title;
+        return a;
       }
 
-      document
-        .getElementById("upload-form")
-        .addEventListener("submit", async (e) => {
-          e.preventDefault();
-          msg.textContent = "Uploading...";
-          const res = await fetch("/api/videos", {
-            method: "POST",
-            body: new FormData(e.target),
-          });
-          const data = await res.json();
-          msg.textContent = res.ok ? "Uploaded!" : data.error;
-          if (res.ok) {
-            e.target.reset();
-            loadVideos();
-          }
-        });
+      async function load() {
+        const vs = await (await fetch("/api/videos")).json();
+        list.innerHTML = vs.length
+          ? ""
+          : '<p class="empty">No videos yet. Drop a file above to upload your first one.</p>';
+        vs.forEach((v) => list.append(card(v)));
+        clearTimeout(timer);
+        if (
+          vs.some((v) => v.status === "uploaded" || v.status === "processing")
+        )
+          timer = setTimeout(load, 4000);
+      }
 
-      loadVideos();
+      function pick(f) {
+        if (!f) return;
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        file.files = dt.files;
+        $("#fname").textContent = `${f.name} (${size(f.size)})`;
+        go.disabled = false;
+      }
+      file.onchange = () => pick(file.files[0]);
+      ["dragenter", "dragover"].forEach((e) =>
+        drop.addEventListener(e, (ev) => {
+          ev.preventDefault();
+          drop.classList.add("over");
+        }),
+      );
+      ["dragleave", "drop"].forEach((e) =>
+        drop.addEventListener(e, () => drop.classList.remove("over")),
+      );
+      drop.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        pick(ev.dataTransfer.files[0]);
+      });
+
+      go.onclick = () => {
+        const fd = new FormData();
+        fd.append("title", $("#title").value);
+        fd.append("video", file.files[0]);
+        const x = new XMLHttpRequest();
+        x.open("POST", "/api/videos");
+        go.disabled = true;
+        x.upload.onprogress = (e) => {
+          if (!e.lengthComputable) return;
+          const p = Math.round((e.loaded / e.total) * 100);
+          $("#bar").style.width = p + "%";
+          $("#msg").textContent = `Uploading ${p}%`;
+        };
+        x.onload = () => {
+          let d = {};
+          try {
+            d = JSON.parse(x.responseText);
+          } catch {}
+          const ok = x.status < 300;
+          $("#msg").textContent = ok
+            ? "Uploaded. Processing has started."
+            : d.error || "Upload failed.";
+          $("#bar").style.width = "0";
+          if (ok) {
+            file.value = "";
+            $("#title").value = "";
+            $("#fname").textContent =
+              "or click to choose a file (MP4, MOV, WebM or MKV, up to 500 MB)";
+            load();
+          } else go.disabled = false;
+        };
+        x.onerror = () => {
+          $("#msg").textContent =
+            "Network error. Check that the server is running.";
+          go.disabled = false;
+        };
+        x.send(fd);
+      };
+
+      load();
     </script>
   </body>
 </html>
