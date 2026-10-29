@@ -1,9 +1,9 @@
-const { execFile } = require("child_process");
-const { promisify } = require("util");
+import { execFile } from "child_process";
+import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
-async function probe(filePath) {
+export async function probe(filePath) {
   const { stdout } = await execFileAsync("ffprobe", [
     "-v",
     "error",
@@ -28,5 +28,3 @@ async function probe(filePath) {
     duration: parseFloat(data.format.duration),
   };
 }
-
-module.exports = { probe };

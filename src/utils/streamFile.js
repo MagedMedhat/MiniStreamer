@@ -1,4 +1,5 @@
-const fs = require("fs");
+import fs from "fs";
+import AppError from "../error/AppError.js";
 
 const CHUNK_SIZE = 1024 * 1024; // 1 MB
 
@@ -9,12 +10,12 @@ function pipeFile(res, filePath, options) {
   stream.pipe(res);
 }
 
-async function streamFile(req, res, filePath, mimeType) {
+export default async function streamFile(req, res, filePath, mimeType) {
   let size;
   try {
     ({ size } = await fs.promises.stat(filePath));
   } catch {
-    return res.status(404).json({ error: "Video file is missing on disk" });
+    throw new AppError("Video file is missing on disk", 404);
   }
 
   const range = req.headers.range;
@@ -47,5 +48,3 @@ async function streamFile(req, res, filePath, mimeType) {
   });
   pipeFile(res, filePath, { start, end });
 }
-
-module.exports = streamFile;

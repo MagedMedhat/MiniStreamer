@@ -1,17 +1,17 @@
-const mongoose = require("mongoose");
+import { Schema, model } from "mongoose";
 
-const renditionSchema = new mongoose.Schema(
+const renditionSchema = new Schema(
   {
-    name: String, // "360p"
+    name: String, // 360,480,..
     width: Number,
     height: Number,
-    bitrate: Number, // bits per second
-    playlist: String, // relative path, e.g. "hls/<id>/360p/playlist.m3u8"
+    bitrate: Number,
+    playlist: String,
   },
   { _id: false },
 );
 
-const videoSchema = new mongoose.Schema(
+const videoSchema = new Schema(
   {
     title: { type: String, required: true, trim: true, maxlength: 120 },
     originalName: String,
@@ -29,4 +29,4 @@ const videoSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Video", videoSchema);
+export default model("Video", videoSchema);
