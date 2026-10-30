@@ -6,29 +6,29 @@ import AppError from "../../error/AppError.js";
 import { STORAGE_ROOT } from "../../config/env.js";
 import { enqueue } from "../transcoding/transcoding.queue.js";
 
-export const createVideo = async ({ file, videoId, title }) => {
-  if (!file)
-    throw new AppError(
-      'No file uploaded (form field name must be "video")',
-      400,
-    );
+// export const createVideo = async ({ file, videoId, title }) => {
+//   if (!file)
+//     throw new AppError(
+//       'No file uploaded (form field name must be "video")',
+//       400,
+//     );
 
-  try {
-    const video = await Video.create({
-      _id: videoId,
-      title: (title || "").trim() || path.parse(file.originalname).name,
-      originalName: file.originalname,
-      originalPath: path.posix.join("originals", file.filename),
-      size: file.size,
-      mimeType: file.mimetype,
-    });
-    enqueue(video._id);
-    return video;
-  } catch (err) {
-    fs.unlink(file.path, () => {}); 
-    throw err;
-  }
-};
+//   try {
+//     const video = await Video.create({
+//       _id: videoId,
+//       title: (title || "").trim() || path.parse(file.originalname).name,
+//       originalName: file.originalname,
+//       originalPath: path.posix.join("originals", file.filename),
+//       size: file.size,
+//       mimeType: file.mimetype,
+//     });
+//     enqueue(video._id);
+//     return video;
+//   } catch (err) {
+//     fs.unlink(file.path, () => {});
+//     throw err;
+//   }
+// };
 
 export const listVideos = () =>
   Video.find()
@@ -50,4 +50,19 @@ export const getVideoSource = async (id) => {
     filePath: path.join(STORAGE_ROOT, video.originalPath),
     mimeType: video.mimeType,
   };
+};
+
+export const createVideoFromUpload = async (upload) => {
+  const { filename = "video", filetype, title } = upload.metadata ?? {};
+
+  const video = await Video.create({
+    _id: upload.id,
+    title: (title || "").trim() || path.parse(filename).name,
+    originalName: filename,
+    originalPath: path.posix.join("originals", upload.id),
+    size: upload.size,
+    mimeType: filetype,
+  });
+  enqueue(video._id);
+  return video;
 };
