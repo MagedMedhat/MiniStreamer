@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MiniStreamer</title>
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -22,6 +23,7 @@
         <div class="uprow">
           <input id="title" placeholder="Title (optional)" maxlength="120" />
           <button id="go" disabled>Upload</button>
+          <button id="pause" hidden>Pause</button>
         </div>
         <div class="progress"><i id="bar"></i></div>
         <p id="msg" role="status"></p>
@@ -103,43 +105,66 @@
         pick(ev.dataTransfer.files[0]);
       });
 
+      const pauseBtn = $("#pause");
+      let upload,
+        paused = false;
+
+      const finish = () => {
+        pauseBtn.hidden = true;
+        paused = false;
+        $("#bar").style.width = "0";
+      };
+
       go.onclick = () => {
-        const fd = new FormData();
-        fd.append("title", $("#title").value);
-        fd.append("video", file.files[0]);
-        const x = new XMLHttpRequest();
-        x.open("POST", "/api/videos");
+        const f = file.files[0];
         go.disabled = true;
-        x.upload.onprogress = (e) => {
-          if (!e.lengthComputable) return;
-          const p = Math.round((e.loaded / e.total) * 100);
-          $("#bar").style.width = p + "%";
-          $("#msg").textContent = `Uploading ${p}%`;
-        };
-        x.onload = () => {
-          let d = {};
-          try {
-            d = JSON.parse(x.responseText);
-          } catch {}
-          const ok = x.status < 300;
-          $("#msg").textContent = ok
-            ? "Uploaded. Processing has started."
-            : d.error || "Upload failed.";
-          $("#bar").style.width = "0";
-          if (ok) {
+        pauseBtn.hidden = false;
+        pauseBtn.textContent = "Pause";
+
+        upload = new tus.Upload(f, {
+          endpoint: "/api/uploads",
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          removeFingerprintOnSuccess: true,
+          metadata: {
+            filename: f.name,
+            filetype: f.type,
+            title: $("#title").value,
+          },
+          onProgress(sent, total) {
+            const p = Math.round((sent / total) * 100);
+            $("#bar").style.width = p + "%";
+            $("#msg").textContent = `Uploading ${p}%`;
+          },
+          onSuccess() {
+            finish();
+            $("#msg").textContent = "Uploaded. Processing has started.";
             file.value = "";
             $("#title").value = "";
             $("#fname").textContent =
               "or click to choose a file (MP4, MOV, WebM or MKV, up to 500 MB)";
             load();
-          } else go.disabled = false;
-        };
-        x.onerror = () => {
-          $("#msg").textContent =
-            "Network error. Check that the server is running.";
-          go.disabled = false;
-        };
-        x.send(fd);
+          },
+          onError(err) {
+            finish();
+            const body = err.originalResponse && err.originalResponse.getBody();
+            $("#msg").textContent =
+              body || "Upload failed. Check your connection and try again.";
+            go.disabled = false;
+          },
+        });
+
+        upload.findPreviousUploads().then((prev) => {
+          if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+          upload.start();
+        });
+      };
+
+      pauseBtn.onclick = () => {
+        paused = !paused;
+        if (paused) upload.abort();
+        else upload.start();
+        pauseBtn.textContent = paused ? "Resume" : "Pause";
+        $("#msg").textContent = paused ? "Paused" : "Resuming...";
       };
 
       load();

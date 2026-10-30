@@ -3,9 +3,10 @@ import path from "path";
 import { STORAGE_ROOT } from "./config/env.js";
 import videoRoutes from "./modules/videos/video.route.js";
 import errorHandler from "./utils/errorHandler.js";
-
+import { tusServer } from "./modules/uploads/tus.server.js";
 const app = express();
 
+app.use("/api/uploads", (req, res) => tusServer.handle(req, res)); // we put it before express.json because tus sends bodies as application/offset+octet-stream
 app.use(express.json());
 app.use(express.static(path.join(import.meta.dirname, "..", "public")));
 
