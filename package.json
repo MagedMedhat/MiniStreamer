@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "worker": "node src/worker.js",
     "dev": "nodemon --watch src src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -14,8 +15,10 @@
   "dependencies": {
     "@tus/file-store": "^2.1.1",
     "@tus/server": "^2.4.6",
+    "bullmq": "^6.5.2",
     "dotenv": "^18.0.8",
     "express": "^5.3.0",
+    "ioredis": "^6.0.0",
     "mongoose": "^9.11.2",
     "multer": "^2.4.0"
   }
