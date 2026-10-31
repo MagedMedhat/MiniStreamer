@@ -11,3 +11,6 @@ export const THUMBNAILS = Object.freeze({
   MAX_COUNT: 100,
   MIN_INTERVAL: 2,
 });
+
+export const QUEUE_NAME = "transcode";
+export const MAX_ATTEMPTS = 3;

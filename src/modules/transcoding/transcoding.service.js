@@ -7,6 +7,12 @@ import { LADDER } from "./transcoding.constants.js";
 import { runFfmpeg } from "../../utils/ffmpeg.js";
 import { generateThumbnails } from "./thumbnails.service.js";
 
+const exists = (p) =>
+  fs.promises.access(p).then(
+    () => true,
+    () => false,
+  );
+
 function pickLadder(sourceHeight) {
   const fitting = LADDER.filter((r) => r.height <= sourceHeight);
   if (fitting.length > 0) return fitting;
@@ -85,13 +91,21 @@ export async function transcode(videoId) {
     const info = await probe(input);
     const ladder = pickLadder(info.height);
 
-    await fs.promises.rm(outRoot, { recursive: true, force: true });
+    await fs.promises.mkdir(outRoot, { recursive: true });
 
     const renditions = [];
     for (const r of ladder) {
-      const dir = path.join(outRoot, r.name);
-      await fs.promises.mkdir(dir, { recursive: true });
-      await runFfmpeg(buildArgs(input, r), dir);
+      const finalDir = path.join(outRoot, r.name);
+      const tmpDir = `${finalDir}.tmp`;
+
+      if (await exists(finalDir)) {
+        console.log(`Skipping ${r.name} for ${video._id} (already done)`);
+      } else {
+        await fs.promises.rm(tmpDir, { recursive: true, force: true });
+        await fs.promises.mkdir(tmpDir, { recursive: true });
+        await runFfmpeg(buildArgs(input, r), tmpDir);
+        await fs.promises.rename(tmpDir, finalDir);
+      }
 
       renditions.push({
         name: r.name,
@@ -113,7 +127,9 @@ export async function transcode(videoId) {
     );
 
     try {
-      await generateThumbnails({ input, outRoot, info });
+      if (!(await exists(path.join(outRoot, "thumbs", "thumbs.vtt")))) {
+        await generateThumbnails({ input, outRoot, info });
+      }
     } catch (err) {
       console.error(`Thumbnails failed for ${video._id}:`, err.message);
     }
@@ -124,8 +140,6 @@ export async function transcode(videoId) {
     await video.save();
   } catch (err) {
     console.error(`Transcoding failed for ${video._id}:`, err.message);
-    video.status = "failed";
-    await video.save();
-    await fs.promises.rm(outRoot, { recursive: true, force: true });
+    throw err;
   }
 }

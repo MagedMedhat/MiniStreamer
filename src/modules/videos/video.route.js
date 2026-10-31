@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { uploadVideoFile } from "../../middlewares/upload.middleware.js";
 import {
   getVideos,
   getVideo,
@@ -8,7 +7,6 @@ import {
 
 const router = Router();
 
-// router.post("/", uploadVideoFile, createVideo);
 router.get("/", getVideos);
 router.get("/:id", getVideo);
 router.get("/:id/stream", streamVideo);

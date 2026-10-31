@@ -1,33 +1,20 @@
-import Video from "../../models/video.model.js";
-import { transcode } from "./transcoding.service.js";
+import { Queue } from "bullmq";
+import { connection } from "../../config/redis.js";
+import { QUEUE_NAME, MAX_ATTEMPTS } from "./transcoding.constants.js";
 
-const CONCURRENCY = 1;
-const jobs = [];
-let running = 0;
+const queue = new Queue(QUEUE_NAME, {
+  connection,
+  defaultJobOptions: {
+    attempts: MAX_ATTEMPTS,
+    backoff: { type: "exponential", delay: 30_000 },
+    removeOnComplete: { age: 3600 }, // 1 hour
+    removeOnFail: { age: 7 * 24 * 3600 }, // 1 week
+  },
+});
 
-function next() {
-  while (running < CONCURRENCY && jobs.length > 0) {
-    const videoId = jobs.shift();
-    running++;
-    transcode(videoId)
-      .catch((err) => console.error("Unexpected job error:", err))
-      .finally(() => {
-        running--;
-        next();
-      });
-  }
-}
-
-export function enqueue(videoId) {
-  jobs.push(videoId);
-  next();
-}
-
-// Pick up anything that didn't finish after a crash or restart
-export async function recoverPendingJobs() {
-  const pending = await Video.find({
-    status: { $in: ["uploaded", "processing"] },
-  }).select("_id");
-
-  pending.forEach((v) => enqueue(v._id));
-}
+export const enqueue = (videoId) =>
+  queue.add(
+    "transcode",
+    { videoId: String(videoId) },
+    { jobId: String(videoId) },
+  );

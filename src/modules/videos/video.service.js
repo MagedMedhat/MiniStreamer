@@ -6,29 +6,6 @@ import AppError from "../../error/AppError.js";
 import { STORAGE_ROOT } from "../../config/env.js";
 import { enqueue } from "../transcoding/transcoding.queue.js";
 
-// export const createVideo = async ({ file, videoId, title }) => {
-//   if (!file)
-//     throw new AppError(
-//       'No file uploaded (form field name must be "video")',
-//       400,
-//     );
-
-//   try {
-//     const video = await Video.create({
-//       _id: videoId,
-//       title: (title || "").trim() || path.parse(file.originalname).name,
-//       originalName: file.originalname,
-//       originalPath: path.posix.join("originals", file.filename),
-//       size: file.size,
-//       mimeType: file.mimetype,
-//     });
-//     enqueue(video._id);
-//     return video;
-//   } catch (err) {
-//     fs.unlink(file.path, () => {});
-//     throw err;
-//   }
-// };
 
 export const listVideos = () =>
   Video.find()
