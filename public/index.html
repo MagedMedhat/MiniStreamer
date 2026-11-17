@@ -1,7 +1,173 @@
 <!doctype html>
-<html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiniStreamer</title>
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
   <body>
-    <h1>MiniStreamer</h1>
-    <video src="/video" controls width="720"></video>
+    <div class="wrap">
+      <header><a class="logo" href="/">MiniStreamer</a></header>
+
+      <section class="up">
+        <label id="drop" class="drop">
+          <input id="file" type="file" accept="video/*" hidden />
+          <strong>Drop a video here</strong>
+          <span id="fname"
+            >or click to choose a file (MP4, MOV, WebM or MKV, up to 500
+            MB)</span
+          >
+        </label>
+        <div class="uprow">
+          <input id="title" placeholder="Title (optional)" maxlength="120" />
+          <button id="go" disabled>Upload</button>
+          <button id="pause" hidden>Pause</button>
+        </div>
+        <div class="progress"><i id="bar"></i></div>
+        <p id="msg" role="status"></p>
+      </section>
+
+      <h2>Library</h2>
+      <div id="list" class="grid"></div>
+    </div>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const list = $("#list"),
+        file = $("#file"),
+        go = $("#go"),
+        drop = $("#drop");
+      const LABEL = {
+        uploaded: "Queued",
+        processing: "Processing",
+        ready: "Ready",
+        failed: "Failed",
+      };
+      let timer;
+
+      const fmt = (s) => {
+        s = Math.floor(s || 0);
+        const h = Math.floor(s / 3600),
+          m = Math.floor((s % 3600) / 60),
+          x = String(s % 60).padStart(2, "0");
+        return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+      };
+      const size = (b) =>
+        b >= 1073741824
+          ? (b / 1073741824).toFixed(1) + " GB"
+          : (b / 1048576).toFixed(1) + " MB";
+
+      function card(v) {
+        const a = document.createElement("a");
+        a.className = "card";
+        a.href = `/watch.html?id=${v._id}`;
+        a.innerHTML = `<div class="thumb">${v.status === "ready" ? `<img src="/hls/${v._id}/thumbs/sprite.jpg" alt="" onerror="this.remove()">` : ""}</div>
+    <div class="info"><h3></h3><div class="row"><span class="chip ${v.status}">${LABEL[v.status] || v.status}</span><span>${size(v.size)}</span>${v.duration ? `<span>${fmt(v.duration)}</span>` : ""}</div></div>`;
+        a.querySelector("h3").textContent = v.title;
+        return a;
+      }
+
+      async function load() {
+        const vs = await (await fetch("/api/videos")).json();
+        list.innerHTML = vs.length
+          ? ""
+          : '<p class="empty">No videos yet. Drop a file above to upload your first one.</p>';
+        vs.forEach((v) => list.append(card(v)));
+        clearTimeout(timer);
+        if (
+          vs.some((v) => v.status === "uploaded" || v.status === "processing")
+        )
+          timer = setTimeout(load, 4000);
+      }
+
+      function pick(f) {
+        if (!f) return;
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        file.files = dt.files;
+        $("#fname").textContent = `${f.name} (${size(f.size)})`;
+        go.disabled = false;
+      }
+      file.onchange = () => pick(file.files[0]);
+      ["dragenter", "dragover"].forEach((e) =>
+        drop.addEventListener(e, (ev) => {
+          ev.preventDefault();
+          drop.classList.add("over");
+        }),
+      );
+      ["dragleave", "drop"].forEach((e) =>
+        drop.addEventListener(e, () => drop.classList.remove("over")),
+      );
+      drop.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        pick(ev.dataTransfer.files[0]);
+      });
+
+      const pauseBtn = $("#pause");
+      let upload,
+        paused = false;
+
+      const finish = () => {
+        pauseBtn.hidden = true;
+        paused = false;
+        $("#bar").style.width = "0";
+      };
+
+      go.onclick = () => {
+        const f = file.files[0];
+        go.disabled = true;
+        pauseBtn.hidden = false;
+        pauseBtn.textContent = "Pause";
+
+        upload = new tus.Upload(f, {
+          endpoint: "/api/uploads",
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          removeFingerprintOnSuccess: true,
+          metadata: {
+            filename: f.name,
+            filetype: f.type,
+            title: $("#title").value,
+          },
+          onProgress(sent, total) {
+            const p = Math.round((sent / total) * 100);
+            $("#bar").style.width = p + "%";
+            $("#msg").textContent = `Uploading ${p}%`;
+          },
+          onSuccess() {
+            finish();
+            $("#msg").textContent = "Uploaded. Processing has started.";
+            file.value = "";
+            $("#title").value = "";
+            $("#fname").textContent =
+              "or click to choose a file (MP4, MOV, WebM or MKV, up to 500 MB)";
+            load();
+          },
+          onError(err) {
+            finish();
+            const body = err.originalResponse && err.originalResponse.getBody();
+            $("#msg").textContent =
+              body || "Upload failed. Check your connection and try again.";
+            go.disabled = false;
+          },
+        });
+
+        upload.findPreviousUploads().then((prev) => {
+          if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+          upload.start();
+        });
+      };
+
+      pauseBtn.onclick = () => {
+        paused = !paused;
+        if (paused) upload.abort();
+        else upload.start();
+        pauseBtn.textContent = paused ? "Resume" : "Pause";
+        $("#msg").textContent = paused ? "Paused" : "Resuming...";
+      };
+
+      load();
+    </script>
   </body>
 </html>

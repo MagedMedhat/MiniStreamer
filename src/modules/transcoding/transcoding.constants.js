@@ -1,0 +1,16 @@
+export const LADDER = [
+  { name: "144p", height: 144, videoBitrate: 150, audioBitrate: 64 },
+  { name: "360p", height: 360, videoBitrate: 800, audioBitrate: 96 },
+  { name: "720p", height: 720, videoBitrate: 2500, audioBitrate: 128 },
+  { name: "1080p", height: 1080, videoBitrate: 5000, audioBitrate: 128 },
+];
+
+export const THUMBNAILS = Object.freeze({
+  WIDTH: 160,
+  COLUMNS: 10,
+  MAX_COUNT: 100,
+  MIN_INTERVAL: 2,
+});
+
+export const QUEUE_NAME = "transcode";
+export const MAX_ATTEMPTS = 3;
